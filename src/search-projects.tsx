@@ -315,7 +315,7 @@ export default function SearchProjects() {
                                 />
                                 <Action.CopyToClipboard
                                     title="Copy Project URL"
-                                    content={`${preferences.odooUrl.replace(/\/$/, "")}/web#id=${project.id}&model=project.project&view_type=form`}
+                                    content={`${preferences.odooUrl.replace(/\/$/, "")}/odoo/action-369/${project.id}/tasks`}
                                 />
                             </ActionPanel>
                         }
