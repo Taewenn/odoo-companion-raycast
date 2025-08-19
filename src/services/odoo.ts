@@ -1,9 +1,46 @@
 import { showToast, Toast } from "@raycast/api";
 import { Preferences, OdooResponse, OdooSearchOptions } from "../types";
 
+// Cache simple pour stocker les derniers résultats
+interface CacheEntry<T> {
+    data: T;
+    timestamp: number;
+    key: string;
+}
+
+class SimpleCache {
+    private cache = new Map<string, CacheEntry<any>>();
+    private readonly TTL = 5 * 60 * 1000; // 5 minutes
+
+    set<T>(key: string, data: T): void {
+        this.cache.set(key, {
+            data,
+            timestamp: Date.now(),
+            key,
+        });
+    }
+
+    get<T>(key: string): T | null {
+        const entry = this.cache.get(key);
+        if (!entry) return null;
+
+        if (Date.now() - entry.timestamp > this.TTL) {
+            this.cache.delete(key);
+            return null;
+        }
+
+        return entry.data as T;
+    }
+
+    clear(): void {
+        this.cache.clear();
+    }
+}
+
 export class OdooService {
     private preferences: Preferences;
     private uid: number | null = null;
+    private cache = new SimpleCache();
 
     constructor(preferences: Preferences) {
         this.preferences = preferences;
@@ -55,10 +92,26 @@ export class OdooService {
             return this.uid;
         } catch (error) {
             console.error("Authentication error:", error);
+            let errorMessage = "Failed to authenticate with Odoo";
+            let title = "Authentication Error";
+
+            if (error instanceof Error) {
+                if (error.message.includes("ENOTFOUND") || error.message.includes("ECONNREFUSED")) {
+                    title = "Connection Error";
+                    errorMessage = "Cannot connect to Odoo server. Please check your URL and internet connection.";
+                } else if (error.message.includes("401") || error.message.includes("403")) {
+                    errorMessage = "Invalid credentials. Please check your username and API key.";
+                } else if (error.message.includes("database")) {
+                    errorMessage = "Database not found. Please check your database name.";
+                } else {
+                    errorMessage = error.message;
+                }
+            }
+
             showToast({
                 style: Toast.Style.Failure,
-                title: "Authentication Error",
-                message: error instanceof Error ? error.message : "Failed to authenticate with Odoo",
+                title,
+                message: errorMessage,
             });
             return null;
         }
@@ -111,6 +164,20 @@ export class OdooService {
             return data.result || null;
         } catch (error) {
             console.error(`Error executing ${model}.${method}:`, error);
+
+            // Provide more context in error messages
+            if (error instanceof Error) {
+                if (error.message.includes("ENOTFOUND")) {
+                    throw new Error(
+                        `Cannot reach Odoo server at ${this.preferences.odooUrl}. Please check the URL and your internet connection.`,
+                    );
+                } else if (error.message.includes("ECONNREFUSED")) {
+                    throw new Error(`Connection refused by Odoo server. Please verify the URL and server status.`);
+                } else if (error.message.includes("timeout")) {
+                    throw new Error(`Request timed out. The Odoo server may be slow or overloaded.`);
+                }
+            }
+
             throw error;
         }
     }
@@ -119,15 +186,48 @@ export class OdooService {
      * Recherche des enregistrements avec un domaine de recherche
      */
     async searchRead<T = any>(model: string, domain: any[] = [], options: OdooSearchOptions): Promise<T[]> {
+        const cacheKey = `${model}-${JSON.stringify(domain)}-${JSON.stringify(options)}`;
+
         try {
             const result = await this.execute<T[]>(model, "search_read", [domain], options);
-            return result || [];
+            const data = result || [];
+
+            // Cache successful results
+            if (data.length > 0) {
+                this.cache.set(cacheKey, data);
+            }
+
+            return data;
         } catch (error) {
             console.error(`Error searching ${model}:`, error);
+
+            // Try to return cached data if available
+            const cachedData = this.cache.get<T[]>(cacheKey);
+            if (cachedData) {
+                showToast({
+                    style: Toast.Style.Success,
+                    title: "Showing cached data",
+                    message: "Using previous results due to connection issue",
+                });
+                return cachedData;
+            }
+
+            // Show appropriate error message
+            let errorMessage = `Failed to search ${model}`;
+            if (error instanceof Error) {
+                if (error.message.includes("ENOTFOUND") || error.message.includes("ECONNREFUSED")) {
+                    errorMessage = "Cannot connect to Odoo server. Please check your connection.";
+                } else if (error.message.includes("access")) {
+                    errorMessage = "Access denied. You may not have permission to view this data.";
+                } else {
+                    errorMessage = error.message;
+                }
+            }
+
             showToast({
                 style: Toast.Style.Failure,
                 title: "Search Error",
-                message: error instanceof Error ? error.message : `Failed to search ${model}`,
+                message: errorMessage,
             });
             return [];
         }
@@ -160,9 +260,22 @@ export class OdooService {
     }
 
     /**
-     * Invalide le cache d'authentification
+     * Teste la connectivité avec l'instance Odoo
+     */
+    async testConnection(): Promise<boolean> {
+        try {
+            const uid = await this.authenticate();
+            return uid !== null;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /**
+     * Invalide les caches
      */
     invalidateAuth(): void {
         this.uid = null;
+        this.cache.clear();
     }
 }

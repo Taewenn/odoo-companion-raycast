@@ -7,7 +7,8 @@ export default function SearchHelpdesk() {
     const preferences = getPreferenceValues<Preferences>();
     const [searchText, setSearchText] = useState("");
     const [helpdeskTeams, setHelpdeskTeams] = useState<HelpdeskTeam[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [connectionChecked, setConnectionChecked] = useState(false);
     const odooService = new OdooService(preferences);
 
     // Fonction pour rechercher des équipes helpdesk
@@ -61,24 +62,75 @@ export default function SearchHelpdesk() {
         }
     };
 
-    // Effect pour charger toutes les équipes au démarrage
+    // Effect pour vérifier la connexion et charger les données
     useEffect(() => {
-        getAllHelpdeskTeams().then(setHelpdeskTeams);
+        const initializeData = async () => {
+            try {
+                setIsLoading(true);
+
+                // Vérifier la connexion
+                const isConnected = await odooService.testConnection();
+                if (!isConnected) {
+                    showToast({
+                        style: Toast.Style.Failure,
+                        title: "Connection failed",
+                        message: "Unable to connect to Odoo. Please check your settings.",
+                    });
+                    setConnectionChecked(true);
+                    setIsLoading(false);
+                    return;
+                }
+
+                // Charger les données
+                const teams = await getAllHelpdeskTeams();
+                setHelpdeskTeams(teams);
+                setConnectionChecked(true);
+                setIsLoading(false);
+            } catch (error) {
+                console.error("Error during initialization:", error);
+                showToast({
+                    style: Toast.Style.Failure,
+                    title: "Initialization failed",
+                    message: "Failed to initialize helpdesk search. Please check your configuration.",
+                });
+                setConnectionChecked(true);
+                setIsLoading(false);
+            }
+        };
+
+        // Start initialization immediately
+        initializeData();
     }, []);
 
     // Debounced search effect
     useEffect(() => {
-        const timeoutId = setTimeout(() => {
-            if (searchText.length >= 2) {
-                searchHelpdeskTeams(searchText).then(setHelpdeskTeams);
-            } else if (searchText.length === 0) {
-                // Si pas de recherche, recharger toutes les équipes
-                getAllHelpdeskTeams().then(setHelpdeskTeams);
+        // Skip search if connection hasn't been checked yet
+        if (!connectionChecked) {
+            return;
+        }
+
+        const timeoutId = setTimeout(async () => {
+            try {
+                if (searchText.length >= 2) {
+                    const teams = await searchHelpdeskTeams(searchText);
+                    setHelpdeskTeams(teams);
+                } else if (searchText.length === 0) {
+                    // Si pas de recherche, recharger toutes les équipes
+                    const teams = await getAllHelpdeskTeams();
+                    setHelpdeskTeams(teams);
+                }
+            } catch (error) {
+                console.error("Error during search:", error);
+                showToast({
+                    style: Toast.Style.Failure,
+                    title: "Search failed",
+                    message: "Unable to search helpdesk teams. Please check your connection.",
+                });
             }
         }, 300);
 
         return () => clearTimeout(timeoutId);
-    }, [searchText]);
+    }, [searchText, connectionChecked]);
 
     // Fonction pour ouvrir les tickets de l'équipe helpdesk
     const openHelpdeskTickets = (team: HelpdeskTeam) => {
@@ -149,10 +201,10 @@ export default function SearchHelpdesk() {
                     description={`No teams match "${searchText}". Try a different search term or check if the Helpdesk module is installed in Odoo.`}
                 />
             )}
-            {searchText.length === 0 && helpdeskTeams.length === 0 && !isLoading && (
+            {searchText.length === 0 && helpdeskTeams.length === 0 && !isLoading && connectionChecked && (
                 <List.EmptyView
                     title="No helpdesk teams available"
-                    description="No helpdesk teams found. Make sure the Helpdesk module is installed and you have the necessary permissions."
+                    description="No helpdesk teams found. You may not have the necessary permissions to view helpdesk teams."
                 />
             )}
         </List>
