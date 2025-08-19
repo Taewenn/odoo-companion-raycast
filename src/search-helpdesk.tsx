@@ -1,167 +1,36 @@
 import { Action, ActionPanel, List, getPreferenceValues, showToast, Toast, open } from "@raycast/api";
 import { useState, useEffect } from "react";
-
-interface Preferences {
-    odooUrl: string;
-    apiKey: string;
-    database: string;
-    userLogin: string;
-}
-
-interface HelpdeskTeam {
-    id: number;
-    name: string;
-    display_name: string;
-    description?: string;
-    member_ids?: number[]; // Team members
-    use_helpdesk_timesheet?: boolean;
-    use_helpdesk_sale_timesheet?: boolean;
-    ticket_count?: number;
-    stage_ids?: number[]; // Stages disponibles pour cette équipe
-    company_id?: [number, string]; // Société
-    active?: boolean; // Équipe active ou non
-}
-
-interface OdooResponse {
-    result?: HelpdeskTeam[];
-    error?: {
-        message: string;
-        data?: {
-            name: string;
-            message: string;
-        };
-    };
-}
+import { OdooService } from "./services/odoo";
+import { Preferences, HelpdeskTeam } from "./types";
 
 export default function SearchHelpdesk() {
     const preferences = getPreferenceValues<Preferences>();
     const [searchText, setSearchText] = useState("");
     const [helpdeskTeams, setHelpdeskTeams] = useState<HelpdeskTeam[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const odooService = new OdooService(preferences);
 
-    // Fonction pour s'authentifier et obtenir l'UID
-    const authenticate = async (): Promise<number | null> => {
-        try {
-            const apiUrl = `${preferences.odooUrl.replace(/\/$/, "")}/jsonrpc`;
-
-            const authBody = {
-                jsonrpc: "2.0",
-                method: "call",
-                params: {
-                    service: "common",
-                    method: "login",
-                    args: [preferences.database, preferences.userLogin, preferences.apiKey], // database, login, password (API key)
-                },
-                id: Math.floor(Math.random() * 1000000),
-            };
-
-            const response = await fetch(apiUrl, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(authBody),
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = (await response.json()) as {
-                result: number;
-                error?: { message: string; data?: { message: string } };
-            };
-
-            if (data.error) {
-                throw new Error(data.error.data?.message || data.error.message);
-            }
-
-            return data.result;
-        } catch (error) {
-            console.error("Authentication error:", error);
-            showToast({
-                style: Toast.Style.Failure,
-                title: "Authentication Error",
-                message: error instanceof Error ? error.message : "Failed to authenticate with Odoo",
-            });
-            return null;
-        }
-    };
-
-    // Fonction pour appeler l'API Odoo
+    // Fonction pour rechercher des équipes helpdesk
     const searchHelpdeskTeams = async (query: string): Promise<HelpdeskTeam[]> => {
         if (!query.trim()) return [];
 
+        setIsLoading(true);
         try {
-            setIsLoading(true);
-
-            // D'abord s'authentifier pour obtenir l'UID
-            const uid = await authenticate();
-            if (!uid) {
-                return [];
-            }
-
-            const apiUrl = `${preferences.odooUrl.replace(/\/$/, "")}/jsonrpc`;
-
-            const requestBody = {
-                jsonrpc: "2.0",
-                method: "call",
-                params: {
-                    service: "object",
-                    method: "execute_kw",
-                    args: [
-                        preferences.database,
-                        uid,
-                        preferences.apiKey,
-                        "helpdesk.team", // model
-                        "search_read", // method
-                        [["|", ["name", "ilike", query], ["display_name", "ilike", query]]], // domain
-                        {
-                            fields: [
-                                "id",
-                                "name",
-                                "display_name",
-                                "description",
-                                "member_ids",
-                                "use_helpdesk_timesheet",
-                                "use_helpdesk_sale_timesheet",
-                                "stage_ids",
-                                "company_id",
-                                "active",
-                            ],
-                        },
-                    ],
-                },
-                id: Math.floor(Math.random() * 1000000),
-            };
-
-            const response = await fetch(apiUrl, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(requestBody),
+            const results = await odooService.searchByName<HelpdeskTeam>("helpdesk.team", query, {
+                fields: [
+                    "id",
+                    "name",
+                    "display_name",
+                    "description",
+                    "member_ids",
+                    "use_helpdesk_timesheet",
+                    "use_helpdesk_sale_timesheet",
+                    "stage_ids",
+                    "company_id",
+                    "active",
+                ],
             });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = (await response.json()) as OdooResponse;
-
-            if (data.error) {
-                throw new Error(data.error.data?.message || data.error.message);
-            }
-
-            return data.result || [];
-        } catch (error) {
-            console.error("Error searching helpdesk teams:", error);
-            showToast({
-                style: Toast.Style.Failure,
-                title: "Error",
-                message: error instanceof Error ? error.message : "Failed to search helpdesk teams",
-            });
-            return [];
+            return results;
         } finally {
             setIsLoading(false);
         }
@@ -169,76 +38,24 @@ export default function SearchHelpdesk() {
 
     // Fonction pour récupérer toutes les équipes helpdesk
     const getAllHelpdeskTeams = async (): Promise<HelpdeskTeam[]> => {
+        setIsLoading(true);
         try {
-            setIsLoading(true);
-
-            const uid = await authenticate();
-            if (!uid) {
-                return [];
-            }
-
-            const apiUrl = `${preferences.odooUrl.replace(/\/$/, "")}/jsonrpc`;
-
-            const requestBody = {
-                jsonrpc: "2.0",
-                method: "call",
-                params: {
-                    service: "object",
-                    method: "execute_kw",
-                    args: [
-                        preferences.database,
-                        uid,
-                        preferences.apiKey,
-                        "helpdesk.team",
-                        "search_read",
-                        [[]], // domain vide pour récupérer toutes les équipes
-                        {
-                            fields: [
-                                "id",
-                                "name",
-                                "display_name",
-                                "description",
-                                "member_ids",
-                                "use_helpdesk_timesheet",
-                                "use_helpdesk_sale_timesheet",
-                                "stage_ids",
-                                "company_id",
-                                "active",
-                            ],
-                            limit: 100, // Limite raisonnable
-                        },
-                    ],
-                },
-                id: Math.floor(Math.random() * 1000000),
-            };
-
-            const response = await fetch(apiUrl, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(requestBody),
+            const results = await odooService.getAll<HelpdeskTeam>("helpdesk.team", {
+                fields: [
+                    "id",
+                    "name",
+                    "display_name",
+                    "description",
+                    "member_ids",
+                    "use_helpdesk_timesheet",
+                    "use_helpdesk_sale_timesheet",
+                    "stage_ids",
+                    "company_id",
+                    "active",
+                ],
+                limit: 100,
             });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = (await response.json()) as OdooResponse;
-
-            if (data.error) {
-                throw new Error(data.error.data?.message || data.error.message);
-            }
-
-            return data.result || [];
-        } catch (error) {
-            console.error("Error getting all helpdesk teams:", error);
-            showToast({
-                style: Toast.Style.Failure,
-                title: "Error",
-                message: error instanceof Error ? error.message : "Failed to get helpdesk teams",
-            });
-            return [];
+            return results;
         } finally {
             setIsLoading(false);
         }

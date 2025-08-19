@@ -1,170 +1,38 @@
-import { Action, ActionPanel, List, getPreferenceValues, showToast, Toast, open } from "@raycast/api";
+import { Action, ActionPanel, List, Toast, getPreferenceValues, open, showToast } from "@raycast/api";
 import { useState, useEffect } from "react";
-
-interface Preferences {
-    odooUrl: string;
-    apiKey: string;
-    database: string;
-    userLogin: string;
-}
-
-interface Project {
-    id: number;
-    name: string;
-    display_name: string;
-    description?: string;
-    user_id?: [number, string]; // Responsable du projet
-    partner_id?: [number, string]; // Client/Partenaire
-    stage_id?: [number, string]; // Étape du projet
-    task_count?: number;
-    active?: boolean; // Projet actif ou non
-    company_id?: [number, string]; // Société
-    date_start?: string; // Date de début
-    date?: string; // Date de fin
-}
-
-interface OdooResponse {
-    result?: Project[];
-    error?: {
-        message: string;
-        data?: {
-            name: string;
-            message: string;
-        };
-    };
-}
+import { OdooService } from "./services/odoo";
+import { Preferences, Project } from "./types";
 
 export default function SearchProjects() {
     const preferences = getPreferenceValues<Preferences>();
     const [searchText, setSearchText] = useState("");
     const [projects, setProjects] = useState<Project[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const odooService = new OdooService(preferences);
 
-    // Fonction pour s'authentifier et obtenir l'UID
-    const authenticate = async (): Promise<number | null> => {
-        try {
-            const apiUrl = `${preferences.odooUrl.replace(/\/$/, "")}/jsonrpc`;
-
-            const authBody = {
-                jsonrpc: "2.0",
-                method: "call",
-                params: {
-                    service: "common",
-                    method: "login",
-                    args: [preferences.database, preferences.userLogin, preferences.apiKey], // database, login, password (API key)
-                },
-                id: Math.floor(Math.random() * 1000000),
-            };
-
-            const response = await fetch(apiUrl, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(authBody),
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = (await response.json()) as {
-                result: number;
-                error?: { message: string; data?: { message: string } };
-            };
-
-            if (data.error) {
-                throw new Error(data.error.data?.message || data.error.message);
-            }
-
-            return data.result;
-        } catch (error) {
-            console.error("Authentication error:", error);
-            showToast({
-                style: Toast.Style.Failure,
-                title: "Authentication Error",
-                message: error instanceof Error ? error.message : "Failed to authenticate with Odoo",
-            });
-            return null;
-        }
-    };
-
-    // Fonction pour appeler l'API Odoo
+    // Fonction pour rechercher des projets
     const searchProjects = async (query: string): Promise<Project[]> => {
         if (!query.trim()) return [];
 
+        setIsLoading(true);
         try {
-            setIsLoading(true);
-
-            // D'abord s'authentifier pour obtenir l'UID
-            const uid = await authenticate();
-            if (!uid) {
-                return [];
-            }
-
-            const apiUrl = `${preferences.odooUrl.replace(/\/$/, "")}/jsonrpc`;
-
-            const requestBody = {
-                jsonrpc: "2.0",
-                method: "call",
-                params: {
-                    service: "object",
-                    method: "execute_kw",
-                    args: [
-                        preferences.database,
-                        uid,
-                        preferences.apiKey,
-                        "project.project", // model
-                        "search_read", // method
-                        [["|", ["name", "ilike", query], ["display_name", "ilike", query]]], // domain
-                        {
-                            fields: [
-                                "id",
-                                "name",
-                                "display_name",
-                                "description",
-                                "user_id",
-                                "partner_id",
-                                "stage_id",
-                                "task_count",
-                                "active",
-                                "company_id",
-                                "date_start",
-                                "date",
-                            ],
-                        },
-                    ],
-                },
-                id: Math.floor(Math.random() * 1000000),
-            };
-
-            const response = await fetch(apiUrl, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(requestBody),
+            const results = await odooService.searchByName<Project>("project.project", query, {
+                fields: [
+                    "id",
+                    "name",
+                    "display_name",
+                    "description",
+                    "user_id",
+                    "partner_id",
+                    "stage_id",
+                    "task_count",
+                    "active",
+                    "company_id",
+                    "date_start",
+                    "date",
+                ],
             });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = (await response.json()) as OdooResponse;
-
-            if (data.error) {
-                throw new Error(data.error.data?.message || data.error.message);
-            }
-
-            return data.result || [];
-        } catch (error) {
-            console.error("Error searching projects:", error);
-            showToast({
-                style: Toast.Style.Failure,
-                title: "Error",
-                message: error instanceof Error ? error.message : "Failed to search projects",
-            });
-            return [];
+            return results;
         } finally {
             setIsLoading(false);
         }
@@ -172,78 +40,26 @@ export default function SearchProjects() {
 
     // Fonction pour récupérer tous les projets
     const getAllProjects = async (): Promise<Project[]> => {
+        setIsLoading(true);
         try {
-            setIsLoading(true);
-
-            const uid = await authenticate();
-            if (!uid) {
-                return [];
-            }
-
-            const apiUrl = `${preferences.odooUrl.replace(/\/$/, "")}/jsonrpc`;
-
-            const requestBody = {
-                jsonrpc: "2.0",
-                method: "call",
-                params: {
-                    service: "object",
-                    method: "execute_kw",
-                    args: [
-                        preferences.database,
-                        uid,
-                        preferences.apiKey,
-                        "project.project",
-                        "search_read",
-                        [[]], // domain vide pour récupérer tous les projets
-                        {
-                            fields: [
-                                "id",
-                                "name",
-                                "display_name",
-                                "description",
-                                "user_id",
-                                "partner_id",
-                                "stage_id",
-                                "task_count",
-                                "active",
-                                "company_id",
-                                "date_start",
-                                "date",
-                            ],
-                            limit: 100, // Limite raisonnable
-                        },
-                    ],
-                },
-                id: Math.floor(Math.random() * 1000000),
-            };
-
-            const response = await fetch(apiUrl, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(requestBody),
+            const results = await odooService.getAll<Project>("project.project", {
+                fields: [
+                    "id",
+                    "name",
+                    "display_name",
+                    "description",
+                    "user_id",
+                    "partner_id",
+                    "stage_id",
+                    "task_count",
+                    "active",
+                    "company_id",
+                    "date_start",
+                    "date",
+                ],
+                limit: 100,
             });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = (await response.json()) as OdooResponse;
-
-            if (data.error) {
-                throw new Error(data.error.data?.message || data.error.message);
-            }
-
-            return data.result || [];
-        } catch (error) {
-            console.error("Error getting all projects:", error);
-            showToast({
-                style: Toast.Style.Failure,
-                title: "Error",
-                message: error instanceof Error ? error.message : "Failed to get projects",
-            });
-            return [];
+            return results;
         } finally {
             setIsLoading(false);
         }
