@@ -13,10 +13,14 @@ interface Project {
     name: string;
     display_name: string;
     description?: string;
-    user_id?: [number, string];
-    partner_id?: [number, string];
-    stage_id?: [number, string];
+    user_id?: [number, string]; // Responsable du projet
+    partner_id?: [number, string]; // Client/Partenaire
+    stage_id?: [number, string]; // Étape du projet
     task_count?: number;
+    active?: boolean; // Projet actif ou non
+    company_id?: [number, string]; // Société
+    date_start?: string; // Date de début
+    date?: string; // Date de fin
 }
 
 interface OdooResponse {
@@ -123,6 +127,10 @@ export default function SearchProjects() {
                                 "partner_id",
                                 "stage_id",
                                 "task_count",
+                                "active",
+                                "company_id",
+                                "date_start",
+                                "date",
                             ],
                         },
                     ],
@@ -162,13 +170,98 @@ export default function SearchProjects() {
         }
     };
 
+    // Fonction pour récupérer tous les projets
+    const getAllProjects = async (): Promise<Project[]> => {
+        try {
+            setIsLoading(true);
+
+            const uid = await authenticate();
+            if (!uid) {
+                return [];
+            }
+
+            const apiUrl = `${preferences.odooUrl.replace(/\/$/, "")}/jsonrpc`;
+
+            const requestBody = {
+                jsonrpc: "2.0",
+                method: "call",
+                params: {
+                    service: "object",
+                    method: "execute_kw",
+                    args: [
+                        preferences.database,
+                        uid,
+                        preferences.apiKey,
+                        "project.project",
+                        "search_read",
+                        [[]], // domain vide pour récupérer tous les projets
+                        {
+                            fields: [
+                                "id",
+                                "name",
+                                "display_name",
+                                "description",
+                                "user_id",
+                                "partner_id",
+                                "stage_id",
+                                "task_count",
+                                "active",
+                                "company_id",
+                                "date_start",
+                                "date",
+                            ],
+                            limit: 100, // Limite raisonnable
+                        },
+                    ],
+                },
+                id: Math.floor(Math.random() * 1000000),
+            };
+
+            const response = await fetch(apiUrl, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(requestBody),
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = (await response.json()) as OdooResponse;
+
+            if (data.error) {
+                throw new Error(data.error.data?.message || data.error.message);
+            }
+
+            return data.result || [];
+        } catch (error) {
+            console.error("Error getting all projects:", error);
+            showToast({
+                style: Toast.Style.Failure,
+                title: "Error",
+                message: error instanceof Error ? error.message : "Failed to get projects",
+            });
+            return [];
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Effect pour charger tous les projets au démarrage
+    useEffect(() => {
+        getAllProjects().then(setProjects);
+    }, []);
+
     // Debounced search effect
     useEffect(() => {
         const timeoutId = setTimeout(() => {
             if (searchText.length >= 2) {
                 searchProjects(searchText).then(setProjects);
-            } else {
-                setProjects([]);
+            } else if (searchText.length === 0) {
+                // Si pas de recherche, recharger tous les projets
+                getAllProjects().then(setProjects);
             }
         }, 300);
 
@@ -178,7 +271,17 @@ export default function SearchProjects() {
     // Fonction pour ouvrir les tâches du projet
     const openProjectTasks = (project: Project) => {
         const tasksUrl = `${preferences.odooUrl.replace(/\/$/, "")}/odoo/action-369/${project.id}/tasks`;
-        open(tasksUrl);
+
+        try {
+            open(tasksUrl);
+        } catch (error) {
+            console.error("Error opening project tasks:", error);
+            showToast({
+                style: Toast.Style.Failure,
+                title: "Error opening tasks",
+                message: "Could not open project tasks. Please check the URL manually.",
+            });
+        }
     };
 
     return (
@@ -195,7 +298,9 @@ export default function SearchProjects() {
                         subtitle={project.description}
                         accessories={[
                             ...(project.task_count ? [{ text: `${project.task_count} tasks` }] : []),
-                            ...(project.user_id ? [{ text: project.user_id[1] }] : []),
+                            ...(project.user_id ? [{ text: `Manager: ${project.user_id[1]}` }] : []),
+                            ...(project.partner_id ? [{ text: `Client: ${project.partner_id[1]}` }] : []),
+                            ...(project.stage_id ? [{ text: project.stage_id[1] }] : []),
                         ]}
                         actions={
                             <ActionPanel>
@@ -218,10 +323,22 @@ export default function SearchProjects() {
                 ))}
             </List.Section>
             {searchText.length > 0 && searchText.length < 2 && (
-                <List.EmptyView title="Type at least 2 characters" description="Start typing to search for projects" />
+                <List.EmptyView
+                    title="Type at least 2 characters"
+                    description="Start typing to search for projects by name"
+                />
             )}
             {searchText.length >= 2 && projects.length === 0 && !isLoading && (
-                <List.EmptyView title="No projects found" description="Try adjusting your search query" />
+                <List.EmptyView
+                    title="No projects found"
+                    description={`No projects match "${searchText}". Try a different search term or check if the Project module is installed in Odoo.`}
+                />
+            )}
+            {searchText.length === 0 && projects.length === 0 && !isLoading && (
+                <List.EmptyView
+                    title="No projects available"
+                    description="No projects found. Make sure the Project module is installed and you have the necessary permissions."
+                />
             )}
         </List>
     );
