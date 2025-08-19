@@ -266,7 +266,7 @@ export class OdooService {
         try {
             const uid = await this.authenticate();
             return uid !== null;
-        } catch (error) {
+        } catch {
             return false;
         }
     }
