@@ -1,4 +1,5 @@
 import { showToast, Toast } from "@raycast/api";
+import { showFailureToast } from "@raycast/utils";
 import { Preferences, OdooResponse, OdooSearchOptions } from "../types";
 
 // Cache simple pour stocker les derniers résultats
@@ -108,8 +109,7 @@ export class OdooService {
                 }
             }
 
-            showToast({
-                style: Toast.Style.Failure,
+            showFailureToast({
                 title,
                 message: errorMessage,
             });
@@ -224,8 +224,7 @@ export class OdooService {
                 }
             }
 
-            showToast({
-                style: Toast.Style.Failure,
+            showFailureToast({
                 title: "Search Error",
                 message: errorMessage,
             });

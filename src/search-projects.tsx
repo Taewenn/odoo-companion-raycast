@@ -1,4 +1,5 @@
 import { Action, ActionPanel, List, Toast, getPreferenceValues, open, showToast } from "@raycast/api";
+import { showFailureToast } from "@raycast/utils";
 import { useState, useEffect } from "react";
 import { OdooService } from "./services/odoo";
 import { Preferences, Project } from "./types";
@@ -75,8 +76,7 @@ export default function SearchProjects() {
                 // Vérifier la connexion
                 const isConnected = await odooService.testConnection();
                 if (!isConnected) {
-                    showToast({
-                        style: Toast.Style.Failure,
+                    showFailureToast({
                         title: "Connection failed",
                         message: "Unable to connect to Odoo. Please check your settings.",
                     });
@@ -92,8 +92,7 @@ export default function SearchProjects() {
                 setIsLoading(false);
             } catch (error) {
                 console.error("Error during initialization:", error);
-                showToast({
-                    style: Toast.Style.Failure,
+                showFailureToast({
                     title: "Initialization failed",
                     message: "Failed to initialize project search. Please check your configuration.",
                 });
@@ -125,8 +124,7 @@ export default function SearchProjects() {
                 }
             } catch (error) {
                 console.error("Error during search:", error);
-                showToast({
-                    style: Toast.Style.Failure,
+                showFailureToast({
                     title: "Search failed",
                     message: "Unable to search projects. Please check your connection.",
                 });
@@ -144,8 +142,7 @@ export default function SearchProjects() {
             open(tasksUrl);
         } catch (error) {
             console.error("Error opening project tasks:", error);
-            showToast({
-                style: Toast.Style.Failure,
+            showFailureToast({
                 title: "Error opening tasks",
                 message: "Could not open project tasks. Please check the URL manually.",
             });

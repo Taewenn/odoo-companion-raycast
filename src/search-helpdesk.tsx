@@ -1,4 +1,5 @@
 import { Action, ActionPanel, List, getPreferenceValues, showToast, Toast, open } from "@raycast/api";
+import { showFailureToast } from "@raycast/utils";
 import { useState, useEffect } from "react";
 import { OdooService } from "./services/odoo";
 import { Preferences, HelpdeskTeam } from "./types";
@@ -71,8 +72,7 @@ export default function SearchHelpdesk() {
                 // Vérifier la connexion
                 const isConnected = await odooService.testConnection();
                 if (!isConnected) {
-                    showToast({
-                        style: Toast.Style.Failure,
+                    showFailureToast({
                         title: "Connection failed",
                         message: "Unable to connect to Odoo. Please check your settings.",
                     });
@@ -88,8 +88,7 @@ export default function SearchHelpdesk() {
                 setIsLoading(false);
             } catch (error) {
                 console.error("Error during initialization:", error);
-                showToast({
-                    style: Toast.Style.Failure,
+                showFailureToast({
                     title: "Initialization failed",
                     message: "Failed to initialize helpdesk search. Please check your configuration.",
                 });
@@ -121,8 +120,7 @@ export default function SearchHelpdesk() {
                 }
             } catch (error) {
                 console.error("Error during search:", error);
-                showToast({
-                    style: Toast.Style.Failure,
+                showFailureToast({
                     title: "Search failed",
                     message: "Unable to search helpdesk teams. Please check your connection.",
                 });
@@ -140,8 +138,7 @@ export default function SearchHelpdesk() {
             open(ticketsUrl);
         } catch (error) {
             console.error("Error opening primary URL:", error);
-            showToast({
-                style: Toast.Style.Failure,
+            showFailureToast({
                 title: "Error opening tickets",
                 message: "Could not open helpdesk tickets. Please check the URL manually.",
             });
