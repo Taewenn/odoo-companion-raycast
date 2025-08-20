@@ -5,7 +5,7 @@ export interface Preferences {
     userLogin: string;
 }
 
-export interface OdooResponse<T = any> {
+export interface OdooResponse<T = unknown> {
     result?: T;
     error?: {
         message: string;
@@ -47,6 +47,6 @@ export interface HelpdeskTeam {
 
 export interface OdooSearchOptions {
     fields: string[];
-    domain?: any[];
+    domain?: unknown[];
     limit?: number;
 }

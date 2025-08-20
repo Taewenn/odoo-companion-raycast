@@ -9,7 +9,7 @@ interface CacheEntry<T> {
 }
 
 class SimpleCache {
-    private cache = new Map<string, CacheEntry<any>>();
+    private cache = new Map<string, CacheEntry<unknown>>();
     private readonly TTL = 5 * 60 * 1000; // 5 minutes
 
     set<T>(key: string, data: T): void {
@@ -120,11 +120,11 @@ export class OdooService {
     /**
      * Exécute une méthode Odoo générique
      */
-    async execute<T = any>(
+    async execute<T = unknown>(
         model: string,
         method: string,
-        args: any[] = [],
-        kwargs: Record<string, any> = {},
+        args: unknown[] = [],
+        kwargs: Record<string, unknown> | OdooSearchOptions = {},
     ): Promise<T | null> {
         try {
             const uid = await this.authenticate();
@@ -185,7 +185,7 @@ export class OdooService {
     /**
      * Recherche des enregistrements avec un domaine de recherche
      */
-    async searchRead<T = any>(model: string, domain: any[] = [], options: OdooSearchOptions): Promise<T[]> {
+    async searchRead<T = unknown>(model: string, domain: unknown[] = [], options: OdooSearchOptions): Promise<T[]> {
         const cacheKey = `${model}-${JSON.stringify(domain)}-${JSON.stringify(options)}`;
 
         try {
@@ -236,7 +236,7 @@ export class OdooService {
     /**
      * Recherche des enregistrements par nom
      */
-    async searchByName<T = any>(
+    async searchByName<T = unknown>(
         model: string,
         query: string,
         options: Omit<OdooSearchOptions, "domain">,
@@ -248,7 +248,7 @@ export class OdooService {
     /**
      * Récupère tous les enregistrements d'un modèle (avec limite)
      */
-    async getAll<T = any>(
+    async getAll<T = unknown>(
         model: string,
         options: Omit<OdooSearchOptions, "domain"> & { limit?: number } = { fields: [] },
     ): Promise<T[]> {
